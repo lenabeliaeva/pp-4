@@ -15,7 +15,7 @@
 
 using namespace std;
 
-#define BLOCK_SIZE 64
+#define BLOCK_SIZE 8
 
 void inicialization(int arraySize, int* matrix1, int* matrix2, int* resultMatrix)
 {
@@ -23,8 +23,8 @@ void inicialization(int arraySize, int* matrix1, int* matrix2, int* resultMatrix
     {
         for (int j = 0; j < arraySize; j ++)
         {
-            matrix1[i * arraySize + j] = rand() % 30 + 1;
-            matrix2[i * arraySize + j] = rand() % 30 + 1;
+            matrix1[i * arraySize + j] = rand() % 10 + 1;
+            matrix2[i * arraySize + j] = rand() % 10 + 1;
             resultMatrix[i * arraySize] = 0;
         }  
     }
@@ -103,23 +103,22 @@ __global__ void fox_kernel(int* A, int* B, int* C, int n)
 {
     __shared__ int As[BLOCK_SIZE][BLOCK_SIZE];
     __shared__ int Bs[BLOCK_SIZE][BLOCK_SIZE];
-    int bx = blockIdx.x, by = blockIdx.y, tx = threadIdx.x, ty = threadIdx.y,
-        Row = by * BLOCK_SIZE + ty, Col = bx * BLOCK_SIZE + tx;
+    int Row = blockIdx.y * BLOCK_SIZE + threadIdx.y, Col = blockIdx.x * BLOCK_SIZE + threadIdx.x;
     int Pvalue = 0;
-    for (int m = 0; m < (n - 1) / BLOCK_SIZE + 1; ++m)
-    {
-        if (Row < n && m* BLOCK_SIZE + tx < n)
-            As[ty][tx] = A[Row * n + m * BLOCK_SIZE + tx];
-        else
-            As[ty][tx] = 0;
-        if(Col < n && m* BLOCK_SIZE + ty < n)
-            Bs[ty][tx] = B[(m * BLOCK_SIZE + ty) * n + Col];
-        else Bs[ty][tx] = 0;
-        __syncthreads();
-        for (int k = 0; k < BLOCK_SIZE; ++k)
-            Pvalue += As[ty][k] * Bs[k][tx];
-        __syncthreads();
-    }
+
+    if (Row < n && ((n - 1) / BLOCK_SIZE + 1) * BLOCK_SIZE + threadIdx.x < n)
+        As[threadIdx.y][threadIdx.x] = A[Row * n + ((n - 1) / BLOCK_SIZE + 1) * BLOCK_SIZE + threadIdx.x];
+    else
+        As[threadIdx.y][threadIdx.x] = 0;
+    if (Col < n && ((n - 1) / BLOCK_SIZE + 1) * BLOCK_SIZE + threadIdx.y < n)
+        Bs[threadIdx.y][threadIdx.x] = B[(((n - 1) / BLOCK_SIZE + 1) * BLOCK_SIZE + threadIdx.y) * n + Col];
+    else Bs[threadIdx.y][threadIdx.x] = 0;
+    __syncthreads();
+
+    for (int k = 0; k < BLOCK_SIZE; ++k)
+        Pvalue += As[threadIdx.y][k] * Bs[k][threadIdx.x];
+    __syncthreads();
+
     if(Row < n && Col < n)
         C [Row * n + Col] = Pvalue;
 }
@@ -201,13 +200,14 @@ int main()
     multiply_omp(n, matrix1, matrix2, result, &n_threads);
     end_time = omp_get_wtime();
     search_time = end_time - start_time;
+    printf("\nУмножение матриц с OMP: %f секунд \n", search_time);
     //output(n, result);
-    printf("\nУмножение матриц с OMP: %f seconds \n", search_time);
+    remove(n, result);
 
     int s_t = clock();
     serial(n, matrix1, matrix2, result, &n_threads);
     cout << "\nПоследовательное умножение: " << clock() - s_t<< " миллисекунд" << endl;
-    //  output(n, result);
+    //output(n, result);
     remove(n, result);
 
     free(matrix1);
